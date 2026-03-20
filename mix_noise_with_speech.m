@@ -50,6 +50,12 @@ for i = 1:length(audio_files)
     noise_segment = noise(start_idx : start_idx + len - 1);
 
     % Estimate SNR using overall energy
+    % Normalize speech signal to a fixed reference level prior to noise scaling
+    % Intensity normalization (e.g., ~65 dB in Praat) does not ensure equal signal power across stimuli
+    % Since noise is scaled based on speech power, variations in speech power would lead to
+    % inconsistent perceived noise levels across files
+    % The reference value (0.0353) corresponds to the mean standard deviation of all speech signals
+    % in the dataset, ensuring consistent signal power before SNR-based noise mixing
     speech = speech * 0.0353 / std(speech);
     speech_power = mean(speech.^2);
     desired_noise_power = speech_power / (10^(snr_dB / 10));
