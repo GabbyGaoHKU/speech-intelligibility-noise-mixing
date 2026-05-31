@@ -1,3 +1,18 @@
+% MATLAB Script for Speech-Noise Mixing at 0 dB SNR
+% This script generates speech-in-noise stimuli by mixing clean speech
+% recordings with a real-world restaurant noise recording.
+%
+% Procedure used in the formal experiment:
+% 1. Read clean speech .wav files from input_folder.
+% 2. Convert speech/noise to mono if needed.
+% 3. Scale each speech waveform to a dataset-derived reference standard
+%    deviation of 0.0353 before SNR-based noise mixing.
+% 4. Extract a duration-matched segment from the same fixed starting point
+%    in the restaurant noise recording.
+% 5. Scale the noise segment so that its mean squared amplitude matches
+%    the speech power, yielding 0 dB SNR.
+% 6. Save the mixed speech-in-noise stimulus.
+
 % Folder and file paths
 % Replace the placeholder paths below with your own local paths before running the script.
 input_folder = 'PATH_TO_SPEECH_FILES';
@@ -9,17 +24,23 @@ if ~exist(output_folder, 'dir')
     mkdir(output_folder);
 end
 
-% Read the preprocessed noise (convert to mono if needed)
+% Read the restaurant noise recording and convert to mono if needed
 [noise, noise_fs] = audioread(noise_file);
 if size(noise, 2) > 1
-    noise = mean(noise, 2);  % If stereo, convert to mono
+    noise = mean(noise, 2);
 end
 
 % Get all speech files
 audio_files = dir(fullfile(input_folder, '*.wav'));
 
-% Set SNR (in dB)
+% Set SNR used in the formal experiment
 snr_dB = 0;
+
+% Dataset-derived reference standard deviation for speech waveform scaling
+reference_std = 0.0353;
+
+% Fixed starting point for the noise segment, in seconds
+fixed_start_time_sec = 5;
 
 for i = 1:length(audio_files)
     fprintf('Processing file %d: %s\n', i, audio_files(i).name);
@@ -38,25 +59,21 @@ for i = 1:length(audio_files)
 
     len = length(speech);
 
-    % Ensure noise length >= speech length; if not, repeat noise by concatenation
-    if length(noise) < len
-        rep_times = ceil(len / length(noise));
-        noise = repmat(noise, rep_times, 1);   % Repeat noise
+    % Extract a fixed-start, duration-matched noise segment
+    start_idx = round(fixed_start_time_sec * Fs);
+    if (start_idx + len - 1) > length(noise)
+        error('Noise file is not long enough to extract a segment of length %d from the fixed starting point.', len);
     end
-
-    % Random start index
-    max_start = length(noise) - len + 1;
-    start_idx = randi(max_start);
     noise_segment = noise(start_idx : start_idx + len - 1);
 
-    % Estimate SNR using overall energy
-    % Normalize speech signal to a fixed reference level prior to noise scaling
-    % Intensity normalization (e.g., ~65 dB in Praat) does not ensure equal signal power across stimuli
-    % Since noise is scaled based on speech power, variations in speech power would lead to
-    % inconsistent perceived noise levels across files
-    % The reference value (0.0353) corresponds to the mean standard deviation of all speech signals
-    % in the dataset, ensuring consistent signal power before SNR-based noise mixing
-    speech = speech * 0.0353 / std(speech);
+    % Scale speech waveform to the dataset-derived reference standard deviation
+    speech_std = std(speech);
+    if speech_std == 0
+        error('Speech file %s has zero standard deviation and cannot be scaled.', audio_files(i).name);
+    end
+    speech = speech * reference_std / speech_std;
+
+    % Compute digital signal power as mean squared amplitude
     speech_power = mean(speech.^2);
     desired_noise_power = speech_power / (10^(snr_dB / 10));
     actual_noise_power = mean(noise_segment.^2);
@@ -73,4 +90,4 @@ for i = 1:length(audio_files)
     audiowrite(output_path, noisy_signal, Fs);
 end
 
-disp('All speech files have been processed for SNR 0 dB noise addition.');
+disp('All speech files have been processed for fixed-segment 0 dB SNR noise mixing.');
